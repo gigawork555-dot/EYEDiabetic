@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Admin - Medical AI DR Screening</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo">AI</div>
+        <div class="brand-text">
+          <div class="title">Admin Dashboard</div>
+          <div class="subtitle">System / Model Information</div>
+        </div>
+      </div>
+      <div class="meta">
+        <a class="meta-link" href="/">Back</a>
+      </div>
+    </header>
+
+    <main class="container">
+      <section class="card">
+        <div class="card-head">
+          <h1 class="h1">System Status</h1>
+          <p class="muted">ข้อมูลสถานะระบบและโมเดล</p>
+        </div>
+
+        <div class="info-grid">
+          <div class="info-item">
+            <div class="k">Status</div>
+            <div class="v">
+              <span class="badge {{ 'ok' if system.status == 'ok' else 'bad' }}">
+                {{ system.status }}
+              </span>
+            </div>
+          </div>
+          <div class="info-item">
+            <div class="k">Model version</div>
+            <div class="v mono">{{ system.model_version or 'N/A' }}</div>
+          </div>
+          <div class="info-item">
+            <div class="k">Last updated</div>
+            <div class="v mono">{{ system.last_updated or 'N/A' }}</div>
+          </div>
+          <div class="info-item">
+            <div class="k">Threshold</div>
+            <div class="v mono">{{ system.threshold }}</div>
+          </div>
+        </div>
+
+        {% if system.status != 'ok' %}
+        <div class="errorbox">
+          <strong>Model load error:</strong>
+          <div class="mono" style="margin-top: 8px; white-space: pre-wrap;">{{ system.error }}</div>
+        </div>
+        {% endif %}
+      </section>
+    </main>
+  </body>
+</html>
+

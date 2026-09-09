@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Medical AI DR Screening</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <div class="logo">AI</div>
+        <div class="brand-text">
+          <div class="title">Medical AI DR Screening</div>
+          <div class="subtitle">Diabetic Retinopathy (DR) — Screening Demo</div>
+        </div>
+      </div>
+
+      <div class="meta">
+        <div class="meta-pill">
+          <span class="k">Status</span>
+          <span class="v {{ 'ok' if status == 'ok' else 'bad' }}">{{ status or 'unknown' }}</span>
+        </div>
+        <div class="meta-pill">
+          <span class="k">Model</span>
+          <span class="v mono">{{ model_version or 'N/A' }}</span>
+        </div>
+        <div class="meta-pill">
+          <span class="k">Updated</span>
+          <span class="v mono">{{ last_updated or 'N/A' }}</span>
+        </div>
+        <div class="meta-pill">
+          <span class="k">Threshold</span>
+          <span class="v mono">{{ threshold }}</span>
+        </div>
+        <a class="meta-link" href="/admin">Admin</a>
+      </div>
+    </header>
+
+    <main class="container">
+      <section class="card">
+        <div class="card-head">
+          <h1 class="h1">อัปโหลดภาพจอประสาทตา</h1>
+          <p class="muted">รองรับ JPG/PNG ขนาดไม่เกิน 5MB ต่อไฟล์ (เลือกหลายไฟล์ได้)</p>
+        </div>
+
+        <div id="dropZone" class="dropzone" tabindex="0" role="button" aria-label="Drag and drop images here">
+          <input id="fileInput" type="file" accept=".jpg,.jpeg,.png" multiple hidden />
+          <div class="dz-inner">
+            <div class="dz-icon">⬆</div>
+            <div class="dz-text">
+              <div class="dz-title">ลากไฟล์มาวางที่นี่ หรือคลิกเพื่อเลือกไฟล์</div>
+              <div class="dz-sub">Multiple upload • Preview • Batch prediction</div>
+            </div>
+          </div>
+        </div>
+
+        <div id="errorBox" class="errorbox hidden"></div>
+
+        <div class="actions">
+          <button id="analyzeBtn" class="btn primary" disabled>วิเคราะห์ภาพ</button>
+          <button id="clearBtn" class="btn ghost" disabled>ล้างรายการ</button>
+          <button id="csvBtn" class="btn ghost" disabled>ดาวน์โหลดผลลัพธ์เป็น CSV</button>
+        </div>
+
+        <div id="loading" class="loading hidden" aria-live="polite">
+          <div class="spinner"></div>
+          <div class="loading-text">กำลังประมวลผลด้วยโมเดล AI...</div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="section-title">
+          <h2 class="h2">ตัวอย่างภาพ (Preview)</h2>
+          <div id="countHint" class="muted">ยังไม่มีไฟล์ที่เลือก</div>
+        </div>
+        <div id="previewGrid" class="grid"></div>
+
+        <div class="divider"></div>
+
+        <div class="section-title">
+          <h2 class="h2">ผลลัพธ์การวิเคราะห์</h2>
+          <div class="muted">Confidence แสดงเป็นเปอร์เซ็นต์ (2 ตำแหน่ง)</div>
+        </div>
+
+        <div class="table-wrap">
+          <table class="table" aria-label="Prediction results table">
+            <thead>
+              <tr>
+                <th>ไฟล์</th>
+                <th>ผลลัพธ์</th>
+                <th>ความมั่นใจ</th>
+                <th>ความน่าจะเป็น</th>
+              </tr>
+            </thead>
+            <tbody id="resultsBody">
+              <tr class="empty-row">
+                <td colspan="4" class="muted">ยังไม่มีผลลัพธ์</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card disclaimer">
+        <h2 class="h2">Medical Disclaimer</h2>
+        <p class="muted">
+          This AI system is for screening purposes only. Please consult an ophthalmologist for medical diagnosis.
+        </p>
+        <p class="muted">
+          ระบบ AI นี้ใช้เพื่อ “คัดกรอง” เท่านั้น ไม่สามารถทดแทนการวินิจฉัยโดยจักษุแพทย์ได้ หากมีความกังวลกรุณาพบแพทย์
+        </p>
+      </section>
+    </main>
+
+    <script>
+      const MAX_BYTES = 5 * 1024 * 1024;
+      const ALLOWED_EXTS = new Set([".jpg", ".jpeg", ".png"]);
+
+      const dropZone = document.getElementById("dropZone");
+      const fileInput = document.getElementById("fileInput");
+      const previewGrid = document.getElementById("previewGrid");
+      const analyzeBtn = document.getElementById("analyzeBtn");
+      const clearBtn = document.getElementById("clearBtn");
+      const csvBtn = document.getElementById("csvBtn");
+      const errorBox = document.getElementById("errorBox");
+      const resultsBody = document.getElementById("resultsBody");
+      const loading = document.getElementById("loading");
+      const countHint = document.getElementById("countHint");
+
+      let selectedFiles = [];
+      let lastResults = [];
+
+      function showError(msg) {
+        errorBox.textContent = msg;
+        errorBox.classList.remove("hidden");
+      }
+
+      function clearError() {
+        errorBox.textContent = "";
+        errorBox.classList.add("hidden");
+      }
+
+      function extOf(name) {
+        const i = name.lastIndexOf(".");
+        return i >= 0 ? name.slice(i).toLowerCase() : "";
+      }
+
+      function validateFile(f) {
+        if (!f || !f.name) return "ไฟล์ไม่ถูกต้อง";
+        const ext = extOf(f.name);
+        if (!ALLOWED_EXTS.has(ext)) return "ชนิดไฟล์ไม่ถูกต้อง (รองรับเฉพาะ JPG/PNG)";
+        if (f.size <= 0) return "ไฟล์ว่างเปล่า";
+        if (f.size > MAX_BYTES) return "ไฟล์มีขนาดเกิน 5MB";
+        return null;
+      }
+
+      function setBusy(isBusy) {
+        analyzeBtn.disabled = isBusy || selectedFiles.length === 0;
+        clearBtn.disabled = isBusy || selectedFiles.length === 0;
+        csvBtn.disabled = isBusy || lastResults.length === 0;
+        loading.classList.toggle("hidden", !isBusy);
+      }
+
+      function updateCountHint() {
+        if (selectedFiles.length === 0) {
+          countHint.textContent = "ยังไม่มีไฟล์ที่เลือก";
+        } else {
+          countHint.textContent = `เลือกแล้ว ${selectedFiles.length} ไฟล์`;
+        }
+      }
+
+      function renderPreviews() {
+        previewGrid.innerHTML = "";
+        for (const f of selectedFiles) {
+          const url = URL.createObjectURL(f);
+          const card = document.createElement("div");
+          card.className = "thumb";
+          card.innerHTML = `
+            <img alt="" />
+            <div class="thumb-meta">
+              <div class="thumb-name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</div>
+              <div class="thumb-size muted">${(f.size / 1024).toFixed(1)} KB</div>
+            </div>
+          `;
+          const img = card.querySelector("img");
+          img.src = url;
+          img.onload = () => URL.revokeObjectURL(url);
+          previewGrid.appendChild(card);
+        }
+      }
+
+      function escapeHtml(s) {
+        return String(s)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+
+      function renderResults(results) {
+        lastResults = results || [];
+        resultsBody.innerHTML = "";
+
+        if (lastResults.length === 0) {
+          resultsBody.innerHTML = `
+            <tr class="empty-row">
+              <td colspan="4" class="muted">ยังไม่มีผลลัพธ์</td>
+            </tr>
+          `;
+          csvBtn.disabled = true;
+          return;
+        }
+
+        for (const r of lastResults) {
+          const probNo = Number(r?.probabilities?.["No DR"] ?? 0);
+          const probDr = Number(r?.probabilities?.["DR"] ?? 0);
+          const pred = String(r?.prediction ?? "");
+          const conf = Number(r?.confidence ?? 0);
+
+          const confPct = (conf * 100).toFixed(2);
+          const noPct = (probNo * 100).toFixed(1);
+          const drPct = (probDr * 100).toFixed(1);
+
+          const row = document.createElement("tr");
+          row.innerHTML = `
+            <td class="mono">${escapeHtml(String(r?.filename ?? ""))}</td>
+            <td>
+              <span class="badge ${pred === "DR" ? "dr" : "nodr"}">${escapeHtml(pred)}</span>
+            </td>
+            <td class="mono">${confPct} %</td>
+            <td>
+              <div class="prob">
+                <div class="bar">
+                  <div class="seg no" style="width:${Math.max(0, Math.min(100, probNo * 100))}%"></div>
+                  <div class="seg dr" style="width:${Math.max(0, Math.min(100, probDr * 100))}%"></div>
+                </div>
+                <div class="prob-labels mono">
+                  <span class="no">No DR: ${noPct}%</span>
+                  <span class="dr">DR: ${drPct}%</span>
+                </div>
+              </div>
+            </td>
+          `;
+          resultsBody.appendChild(row);
+        }
+
+        csvBtn.disabled = false;
+      }
+
+      function toCsv(rows) {
+        const header = ["filename", "prediction", "confidence", "prob_no_dr", "prob_dr"];
+        const lines = [header.join(",")];
+        for (const r of rows) {
+          const filename = String(r?.filename ?? "").replaceAll('"', '""');
+          const prediction = String(r?.prediction ?? "").replaceAll('"', '""');
+          const confidence = Number(r?.confidence ?? 0);
+          const probNo = Number(r?.probabilities?.["No DR"] ?? 0);
+          const probDr = Number(r?.probabilities?.["DR"] ?? 0);
+          lines.push(`"${filename}","${prediction}",${confidence},${probNo},${probDr}`);
+        }
+        return lines.join("\n");
+      }
+
+      function downloadCsv() {
+        if (!lastResults.length) return;
+        const csv = toCsv(lastResults);
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "dr_predictions.csv";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      }
+
+      function addFiles(files) {
+        clearError();
+        const incoming = Array.from(files || []);
+        const valid = [];
+        for (const f of incoming) {
+          const err = validateFile(f);
+          if (err) {
+            showError(`${f?.name || "ไฟล์"}: ${err}`);
+            return;
+          }
+          valid.push(f);
+        }
+        selectedFiles = selectedFiles.concat(valid);
+        updateCountHint();
+        renderPreviews();
+        analyzeBtn.disabled = selectedFiles.length === 0;
+        clearBtn.disabled = selectedFiles.length === 0;
+      }
+
+      async function runPredict() {
+        clearError();
+        if (selectedFiles.length === 0) {
+          showError("กรุณาเลือกไฟล์ก่อน");
+          return;
+        }
+
+        setBusy(true);
+        try {
+          const fd = new FormData();
+          for (const f of selectedFiles) fd.append("files", f, f.name);
+
+          const res = await fetch("/predict", { method: "POST", body: fd });
+          const data = await res.json().catch(() => null);
+          if (!res.ok) {
+            const msg = data?.detail || "เกิดข้อผิดพลาด";
+            showError(msg);
+            return;
+          }
+
+          const results = Array.isArray(data?.results) ? data.results : [data];
+          renderResults(results);
+        } catch (e) {
+          showError("เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ");
+        } finally {
+          setBusy(false);
+        }
+      }
+
+      function clearAll() {
+        selectedFiles = [];
+        lastResults = [];
+        previewGrid.innerHTML = "";
+        updateCountHint();
+        renderResults([]);
+        analyzeBtn.disabled = true;
+        clearBtn.disabled = true;
+        csvBtn.disabled = true;
+        fileInput.value = "";
+        clearError();
+      }
+
+      dropZone.addEventListener("click", () => fileInput.click());
+      dropZone.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") fileInput.click();
+      });
+      fileInput.addEventListener("change", (e) => addFiles(e.target.files));
+
+      dropZone.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        dropZone.classList.add("dragover");
+      });
+      dropZone.addEventListener("dragleave", () => dropZone.classList.remove("dragover"));
+      dropZone.addEventListener("drop", (e) => {
+        e.preventDefault();
+        dropZone.classList.remove("dragover");
+        addFiles(e.dataTransfer.files);
+      });
+
+      analyzeBtn.addEventListener("click", runPredict);
+      clearBtn.addEventListener("click", clearAll);
+      csvBtn.addEventListener("click", downloadCsv);
+
+      updateCountHint();
+      renderResults([]);
+    </script>
+  </body>
+</html>
+

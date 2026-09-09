@@ -1,0 +1,13 @@
+1)& "C:\Users\COM-GARAGE\AppData\Local\Programs\Python\Python311\python.exe" -m venv .venv
+.venv\Scripts\Activate.ps1
+
+2) รันเซิร์ฟเวอร์แบบง่าย
+ยังอยู่โฟลเดอร์เดิม รัน:
+  python run.py
+หรือดับเบิลคลิก run.bat / รัน .\run.ps1 ใน PowerShell ก็ได้
+
+3) เปิดหน้าเว็บ (หลังเซิร์ฟเวอร์ขึ้นแล้ว)
+หน้าใช้งานหลัก: http://127.0.0.1:8000/
+หน้าแอดมิน: http://127.0.0.1:8000/admin
+Health check: http://127.0.0.1:8000/health
+จากนั้นลองอัปโหลดรูป JPG/PNG (≤ 5MB) แล้วดูผล DR / No DR และลองกดดาวน์โหลด CSV ได้เลย หากมี error ตอนรันหรือทดสอบ บอกผมข้อความ error มาจะช่วยแก้ต่อให้ทันที.
