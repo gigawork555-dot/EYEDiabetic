@@ -12,7 +12,7 @@
         <div class="logo">AI</div>
         <div class="brand-text">
           <div class="title">Admin Dashboard</div>
-          <div class="subtitle">System / Model Information</div>
+          <div class="subtitle">System / Models Information</div>
         </div>
       </div>
       <div class="meta">
@@ -24,40 +24,75 @@
       <section class="card">
         <div class="card-head">
           <h1 class="h1">System Status</h1>
-          <p class="muted">ข้อมูลสถานะระบบและโมเดล</p>
+          <p class="muted">ข้อมูลสถานะระบบและโมเดลทั้งหมดที่ลงทะเบียนไว้</p>
         </div>
 
         <div class="info-grid">
           <div class="info-item">
-            <div class="k">Status</div>
+            <div class="k">Overall status</div>
             <div class="v">
-              <span class="badge {{ 'ok' if system.status == 'ok' else 'bad' }}">
-                {{ system.status }}
-              </span>
+              <span class="badge {{ 'ok' if system.status == 'ok' else 'bad' }}">{{ system.status }}</span>
             </div>
           </div>
           <div class="info-item">
-            <div class="k">Model version</div>
-            <div class="v mono">{{ system.model_version or 'N/A' }}</div>
-          </div>
-          <div class="info-item">
-            <div class="k">Last updated</div>
-            <div class="v mono">{{ system.last_updated or 'N/A' }}</div>
+            <div class="k">Default model</div>
+            <div class="v mono">{{ system.default_model or 'N/A' }}</div>
           </div>
           <div class="info-item">
             <div class="k">Threshold</div>
             <div class="v mono">{{ system.threshold }}</div>
           </div>
+          <div class="info-item">
+            <div class="k">Models registered</div>
+            <div class="v mono">{{ system.models|length }}</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h1 class="h1">Models</h1>
+          <p class="muted">สถานะการโหลดของแต่ละโมเดลใน registry</p>
         </div>
 
-        {% if system.status != 'ok' %}
-        <div class="errorbox">
-          <strong>Model load error:</strong>
-          <div class="mono" style="margin-top: 8px; white-space: pre-wrap;">{{ system.error }}</div>
+        <div class="table-wrap">
+          <table class="table" aria-label="Models status table">
+            <thead>
+              <tr>
+                <th>Key</th>
+                <th>Display name</th>
+                <th>Status</th>
+                <th>Version</th>
+                <th>Last updated</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for m in system.models %}
+              <tr>
+                <td class="mono">{{ m.key }}</td>
+                <td>{{ m.display_name }}</td>
+                <td><span class="badge {{ 'ok' if m.status == 'ok' else 'bad' }}">{{ m.status }}</span></td>
+                <td class="mono">{{ m.model_version or 'N/A' }}</td>
+                <td class="mono">{{ m.last_updated or 'N/A' }}</td>
+              </tr>
+              {% if m.status != 'ok' %}
+              <tr>
+                <td></td>
+                <td colspan="4">
+                  <div class="errorbox" style="margin-top:0;">
+                    <strong>Load error:</strong>
+                    <div class="mono" style="margin-top: 6px; white-space: pre-wrap;">{{ m.error }}</div>
+                  </div>
+                </td>
+              </tr>
+              {% endif %}
+              {% else %}
+              <tr class="empty-row"><td colspan="5" class="muted">ไม่มีโมเดลใน registry</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
         </div>
-        {% endif %}
       </section>
     </main>
   </body>
 </html>
-

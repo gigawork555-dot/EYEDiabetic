@@ -1,0 +1,9 @@
+วางไฟล์ .keras ทั้ง 5 ไฟล์ไว้ในโฟลเดอร์นี้:
+  EfficientNetB0_model.keras
+  MobileNetV2_model.keras
+  ResNet50V2_model.keras
+  Xception_model.keras
+  BasicCNN_model.keras
+
+ชื่อไฟล์ต้องตรงกับที่กำหนดไว้ใน app/models/registry.py เป๊ะ
+(หรือจะแก้ registry.py ให้ตรงกับชื่อไฟล์จริงของคุณก็ได้)

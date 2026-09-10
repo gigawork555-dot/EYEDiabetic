@@ -1,0 +1,24 @@
+# วิธีใช้:
+#   docker compose up --build -d     # build + รันเบื้องหลัง
+#   docker compose logs -f           # ดู log แบบ real-time (เช็คว่าโมเดลโหลดครบไหม)
+#   docker compose down              # หยุด + ลบ container
+#
+# หลังรันแล้ว เข้าใช้งานได้ที่:
+#   เครื่องนี้เอง      -> http://localhost:8000
+#   เครื่องอื่นใน LAN   -> http://<LAN-IP ของเครื่องนี้>:8000
+
+services:
+  dr-screening:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    container_name: dr-screening-app
+    ports:
+      # "8000:8000" = "พอร์ตเครื่อง:พอร์ตใน container"
+      # ถ้าพอร์ต 8000 ของเครื่องถูกใช้อยู่แล้ว เปลี่ยนฝั่งซ้ายได้ เช่น "9000:8000"
+      - "8000:8000"
+    volumes:
+      # เอาไฟล์ .keras ไว้นอก image — แก้/สลับโมเดลได้โดยไม่ต้อง build image ใหม่
+      - ./app/models:/app/app/models
+    restart: unless-stopped
+    # ไม่ต้องตั้ง environment เพิ่ม เพราะ Dockerfile bind 0.0.0.0:8000 ให้แล้ว

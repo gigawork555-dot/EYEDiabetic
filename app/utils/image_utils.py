@@ -45,4 +45,3 @@ def load_rgb_224_from_bytes(image_bytes: bytes) -> np.ndarray:
         return arr
     except UnidentifiedImageError as e:
         raise ValueError("ไฟล์รูปอาจเสียหาย หรือไม่ใช่ไฟล์รูปที่รองรับ") from e
-

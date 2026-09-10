@@ -113,6 +113,48 @@ body {
 .h2 { margin: 0; font-size: 16px; }
 .section-title { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
 
+/* ---- Mode switch (single model / compare all) ---- */
+.mode-switch {
+  margin-top: 14px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.mode-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.mode-option:has(input:checked) {
+  border-color: rgba(94, 234, 212, 0.65);
+  background: rgba(94, 234, 212, 0.12);
+}
+.mode-option input { accent-color: var(--primary); }
+
+.model-select-wrap {
+  margin-top: 12px;
+  display: grid;
+  gap: 6px;
+}
+.select {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font-weight: 700;
+  max-width: 320px;
+}
+.select:focus { outline: none; border-color: rgba(94, 234, 212, 0.65); }
+
 .dropzone {
   margin-top: 14px;
   border: 1px dashed rgba(94, 234, 212, 0.45);
@@ -280,6 +322,25 @@ body {
 .prob-labels .no { color: rgba(94, 234, 212, 0.95); }
 .prob-labels .dr { color: rgba(255, 77, 109, 0.95); }
 
+/* ---- Compare-mode results (one block per uploaded file) ---- */
+.compare-list {
+  margin-top: 12px;
+  display: grid;
+  gap: 16px;
+}
+.compare-file-block {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.compare-file-head {
+  font-size: 13px;
+  font-weight: 800;
+  margin-bottom: 8px;
+  color: var(--text);
+}
+
 .info-grid {
   margin-top: 14px;
   display: grid;
@@ -303,5 +364,5 @@ body {
   .meta { width: 100%; justify-content: flex-start; }
   .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .info-grid { grid-template-columns: 1fr; }
+  .select { max-width: 100%; }
 }
-

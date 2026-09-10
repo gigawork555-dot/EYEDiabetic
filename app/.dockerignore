@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+venv/
+
+# ไฟล์โมเดลไม่ต้อง COPY เข้า image — docker-compose mount volume ทับตอนรันอยู่แล้ว
+# (ถ้ารันด้วย `docker run` ตรงๆ โดยไม่ mount volume ก็ยังต้องเอาไฟล์ .keras
+#  ไปวางในโฟลเดอร์ app/models/ นอก container ก่อน build ตามปกติ ไม่งั้นโมเดลจะหาย)
+models/*.keras

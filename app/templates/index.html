@@ -22,12 +22,8 @@
           <span class="v {{ 'ok' if status == 'ok' else 'bad' }}">{{ status or 'unknown' }}</span>
         </div>
         <div class="meta-pill">
-          <span class="k">Model</span>
-          <span class="v mono">{{ model_version or 'N/A' }}</span>
-        </div>
-        <div class="meta-pill">
-          <span class="k">Updated</span>
-          <span class="v mono">{{ last_updated or 'N/A' }}</span>
+          <span class="k">Models loaded</span>
+          <span class="v mono">{{ models|length }}</span>
         </div>
         <div class="meta-pill">
           <span class="k">Threshold</span>
@@ -42,6 +38,32 @@
         <div class="card-head">
           <h1 class="h1">อัปโหลดภาพจอประสาทตา</h1>
           <p class="muted">รองรับ JPG/PNG ขนาดไม่เกิน 5MB ต่อไฟล์ (เลือกหลายไฟล์ได้)</p>
+        </div>
+
+        <div class="mode-switch" role="radiogroup" aria-label="โหมดการทำนาย">
+          <label class="mode-option">
+            <input type="radio" name="predictMode" value="single" checked />
+            <span>เลือกโมเดลเดียว</span>
+          </label>
+          <label class="mode-option">
+            <input type="radio" name="predictMode" value="compare" />
+            <span>เปรียบเทียบทุกโมเดล</span>
+          </label>
+        </div>
+
+        <div id="modelSelectWrap" class="model-select-wrap">
+          <label class="k" for="modelSelect">โมเดลที่ใช้ทำนาย</label>
+          <select id="modelSelect" class="select">
+            {% for m in models %}
+            <option value="{{ m.key }}" {{ 'selected' if m.key == default_model else '' }}>{{ m.display_name }}</option>
+            {% endfor %}
+          </select>
+          {% if not models %}
+          <div class="errorbox" style="margin-top:10px;">
+            ไม่มีโมเดลพร้อมใช้งาน กรุณาตรวจสอบไฟล์ .keras ใน <span class="mono">app/models/</span> แล้วดูรายละเอียดที่หน้า
+            <a href="/admin">Admin</a>
+          </div>
+          {% endif %}
         </div>
 
         <div id="dropZone" class="dropzone" tabindex="0" role="button" aria-label="Drag and drop images here">
@@ -83,7 +105,8 @@
           <div class="muted">Confidence แสดงเป็นเปอร์เซ็นต์ (2 ตำแหน่ง)</div>
         </div>
 
-        <div class="table-wrap">
+        <!-- Single-model results table -->
+        <div id="singleResultsWrap" class="table-wrap">
           <table class="table" aria-label="Prediction results table">
             <thead>
               <tr>
@@ -99,6 +122,11 @@
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <!-- Compare-mode results (one block per file, one row per model) -->
+        <div id="compareResultsWrap" class="hidden">
+          <div id="compareResultsBody" class="compare-list"></div>
         </div>
       </section>
 
@@ -127,9 +155,29 @@
       const resultsBody = document.getElementById("resultsBody");
       const loading = document.getElementById("loading");
       const countHint = document.getElementById("countHint");
+      const modelSelectWrap = document.getElementById("modelSelectWrap");
+      const modelSelect = document.getElementById("modelSelect");
+      const singleResultsWrap = document.getElementById("singleResultsWrap");
+      const compareResultsWrap = document.getElementById("compareResultsWrap");
+      const compareResultsBody = document.getElementById("compareResultsBody");
+      const modeRadios = document.querySelectorAll('input[name="predictMode"]');
 
       let selectedFiles = [];
-      let lastResults = [];
+      let lastMode = "single";
+      let lastSingleResults = [];
+      let lastCompareResults = [];
+
+      function currentMode() {
+        for (const r of modeRadios) if (r.checked) return r.value;
+        return "single";
+      }
+
+      function applyModeUI() {
+        const mode = currentMode();
+        modelSelectWrap.classList.toggle("hidden", mode !== "single");
+        singleResultsWrap.classList.toggle("hidden", mode !== "single");
+        compareResultsWrap.classList.toggle("hidden", mode !== "compare");
+      }
 
       function showError(msg) {
         errorBox.textContent = msg;
@@ -156,18 +204,17 @@
       }
 
       function setBusy(isBusy) {
+        const hasResults = lastSingleResults.length > 0 || lastCompareResults.length > 0;
         analyzeBtn.disabled = isBusy || selectedFiles.length === 0;
         clearBtn.disabled = isBusy || selectedFiles.length === 0;
-        csvBtn.disabled = isBusy || lastResults.length === 0;
+        csvBtn.disabled = isBusy || !hasResults;
         loading.classList.toggle("hidden", !isBusy);
       }
 
       function updateCountHint() {
-        if (selectedFiles.length === 0) {
-          countHint.textContent = "ยังไม่มีไฟล์ที่เลือก";
-        } else {
-          countHint.textContent = `เลือกแล้ว ${selectedFiles.length} ไฟล์`;
-        }
+        countHint.textContent = selectedFiles.length === 0
+          ? "ยังไม่มีไฟล์ที่เลือก"
+          : `เลือกแล้ว ${selectedFiles.length} ไฟล์`;
       }
 
       function renderPreviews() {
@@ -199,73 +246,145 @@
           .replaceAll("'", "&#039;");
       }
 
-      function renderResults(results) {
-        lastResults = results || [];
+      function probBarHtml(probNo, probDr) {
+        const noPct = (probNo * 100).toFixed(1);
+        const drPct = (probDr * 100).toFixed(1);
+        return `
+          <div class="prob">
+            <div class="bar">
+              <div class="seg no" style="width:${Math.max(0, Math.min(100, probNo * 100))}%"></div>
+              <div class="seg dr" style="width:${Math.max(0, Math.min(100, probDr * 100))}%"></div>
+            </div>
+            <div class="prob-labels mono">
+              <span class="no">No DR: ${noPct}%</span>
+              <span class="dr">DR: ${drPct}%</span>
+            </div>
+          </div>
+        `;
+      }
+
+      // ---------- Single-model rendering ----------
+      function renderSingleResults(results) {
+        lastSingleResults = results || [];
         resultsBody.innerHTML = "";
 
-        if (lastResults.length === 0) {
-          resultsBody.innerHTML = `
-            <tr class="empty-row">
-              <td colspan="4" class="muted">ยังไม่มีผลลัพธ์</td>
-            </tr>
-          `;
-          csvBtn.disabled = true;
+        if (lastSingleResults.length === 0) {
+          resultsBody.innerHTML = `<tr class="empty-row"><td colspan="4" class="muted">ยังไม่มีผลลัพธ์</td></tr>`;
           return;
         }
 
-        for (const r of lastResults) {
+        for (const r of lastSingleResults) {
           const probNo = Number(r?.probabilities?.["No DR"] ?? 0);
           const probDr = Number(r?.probabilities?.["DR"] ?? 0);
           const pred = String(r?.prediction ?? "");
           const conf = Number(r?.confidence ?? 0);
-
           const confPct = (conf * 100).toFixed(2);
-          const noPct = (probNo * 100).toFixed(1);
-          const drPct = (probDr * 100).toFixed(1);
 
           const row = document.createElement("tr");
           row.innerHTML = `
             <td class="mono">${escapeHtml(String(r?.filename ?? ""))}</td>
-            <td>
-              <span class="badge ${pred === "DR" ? "dr" : "nodr"}">${escapeHtml(pred)}</span>
-            </td>
+            <td><span class="badge ${pred === "DR" ? "dr" : "nodr"}">${escapeHtml(pred)}</span></td>
             <td class="mono">${confPct} %</td>
-            <td>
-              <div class="prob">
-                <div class="bar">
-                  <div class="seg no" style="width:${Math.max(0, Math.min(100, probNo * 100))}%"></div>
-                  <div class="seg dr" style="width:${Math.max(0, Math.min(100, probDr * 100))}%"></div>
-                </div>
-                <div class="prob-labels mono">
-                  <span class="no">No DR: ${noPct}%</span>
-                  <span class="dr">DR: ${drPct}%</span>
-                </div>
-              </div>
-            </td>
+            <td>${probBarHtml(probNo, probDr)}</td>
           `;
           resultsBody.appendChild(row);
         }
-
-        csvBtn.disabled = false;
       }
 
-      function toCsv(rows) {
-        const header = ["filename", "prediction", "confidence", "prob_no_dr", "prob_dr"];
+      // ---------- Compare-mode rendering ----------
+      function renderCompareResults(results) {
+        lastCompareResults = results || [];
+        compareResultsBody.innerHTML = "";
+
+        if (lastCompareResults.length === 0) {
+          compareResultsBody.innerHTML = `<div class="muted">ยังไม่มีผลลัพธ์</div>`;
+          return;
+        }
+
+        for (const item of lastCompareResults) {
+          const block = document.createElement("div");
+          block.className = "compare-file-block";
+
+          const rowsHtml = (item.models || []).map((m) => {
+            if (m.error) {
+              return `
+                <tr>
+                  <td class="mono">${escapeHtml(m.model_display_name || m.model)}</td>
+                  <td colspan="3" class="errorbox" style="margin:0;">${escapeHtml(m.error)}</td>
+                </tr>
+              `;
+            }
+            const probNo = Number(m?.probabilities?.["No DR"] ?? 0);
+            const probDr = Number(m?.probabilities?.["DR"] ?? 0);
+            const pred = String(m?.prediction ?? "");
+            const confPct = (Number(m?.confidence ?? 0) * 100).toFixed(2);
+            return `
+              <tr>
+                <td class="mono">${escapeHtml(m.model_display_name || m.model)}</td>
+                <td><span class="badge ${pred === "DR" ? "dr" : "nodr"}">${escapeHtml(pred)}</span></td>
+                <td class="mono">${confPct} %</td>
+                <td>${probBarHtml(probNo, probDr)}</td>
+              </tr>
+            `;
+          }).join("");
+
+          block.innerHTML = `
+            <div class="compare-file-head mono">${escapeHtml(item.filename || "")}</div>
+            <div class="table-wrap">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>โมเดล</th>
+                    <th>ผลลัพธ์</th>
+                    <th>ความมั่นใจ</th>
+                    <th>ความน่าจะเป็น</th>
+                  </tr>
+                </thead>
+                <tbody>${rowsHtml}</tbody>
+              </table>
+            </div>
+          `;
+          compareResultsBody.appendChild(block);
+        }
+      }
+
+      // ---------- CSV export (works for both modes) ----------
+      function toCsv() {
+        const header = ["filename", "model", "prediction", "confidence", "prob_no_dr", "prob_dr"];
         const lines = [header.join(",")];
-        for (const r of rows) {
-          const filename = String(r?.filename ?? "").replaceAll('"', '""');
+
+        const pushRow = (filename, model, r) => {
+          if (r.error) {
+            lines.push(`"${filename}","${model}","ERROR",,,"${String(r.error).replaceAll('"', '""')}"`);
+            return;
+          }
           const prediction = String(r?.prediction ?? "").replaceAll('"', '""');
           const confidence = Number(r?.confidence ?? 0);
           const probNo = Number(r?.probabilities?.["No DR"] ?? 0);
           const probDr = Number(r?.probabilities?.["DR"] ?? 0);
-          lines.push(`"${filename}","${prediction}",${confidence},${probNo},${probDr}`);
+          lines.push(`"${filename}","${model}","${prediction}",${confidence},${probNo},${probDr}`);
+        };
+
+        if (lastMode === "compare") {
+          for (const item of lastCompareResults) {
+            const filename = String(item?.filename ?? "").replaceAll('"', '""');
+            for (const m of item.models || []) {
+              pushRow(filename, m.model_display_name || m.model, m);
+            }
+          }
+        } else {
+          for (const r of lastSingleResults) {
+            const filename = String(r?.filename ?? "").replaceAll('"', '""');
+            pushRow(filename, modelSelect.value, r);
+          }
         }
         return lines.join("\n");
       }
 
       function downloadCsv() {
-        if (!lastResults.length) return;
-        const csv = toCsv(lastResults);
+        const hasResults = lastMode === "compare" ? lastCompareResults.length > 0 : lastSingleResults.length > 0;
+        if (!hasResults) return;
+        const csv = toCsv();
         const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -303,21 +422,36 @@
           return;
         }
 
+        const mode = currentMode();
+        lastMode = mode;
         setBusy(true);
+
         try {
           const fd = new FormData();
           for (const f of selectedFiles) fd.append("files", f, f.name);
 
-          const res = await fetch("/predict", { method: "POST", body: fd });
+          let endpoint = "/predict";
+          if (mode === "single") {
+            fd.append("model", modelSelect.value);
+          } else {
+            endpoint = "/predict/compare";
+          }
+
+          const res = await fetch(endpoint, { method: "POST", body: fd });
           const data = await res.json().catch(() => null);
           if (!res.ok) {
-            const msg = data?.detail || "เกิดข้อผิดพลาด";
-            showError(msg);
+            showError(data?.detail || "เกิดข้อผิดพลาด");
             return;
           }
 
-          const results = Array.isArray(data?.results) ? data.results : [data];
-          renderResults(results);
+          if (mode === "single") {
+            const results = Array.isArray(data?.results) ? data.results : [data];
+            renderSingleResults(results);
+          } else {
+            const results = Array.isArray(data?.results) ? data.results : [data];
+            renderCompareResults(results);
+          }
+          csvBtn.disabled = false;
         } catch (e) {
           showError("เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ");
         } finally {
@@ -327,10 +461,12 @@
 
       function clearAll() {
         selectedFiles = [];
-        lastResults = [];
+        lastSingleResults = [];
+        lastCompareResults = [];
         previewGrid.innerHTML = "";
         updateCountHint();
-        renderResults([]);
+        renderSingleResults([]);
+        renderCompareResults([]);
         analyzeBtn.disabled = true;
         clearBtn.disabled = true;
         csvBtn.disabled = true;
@@ -358,10 +494,12 @@
       analyzeBtn.addEventListener("click", runPredict);
       clearBtn.addEventListener("click", clearAll);
       csvBtn.addEventListener("click", downloadCsv);
+      for (const r of modeRadios) r.addEventListener("change", applyModeUI);
 
+      applyModeUI();
       updateCountHint();
-      renderResults([]);
+      renderSingleResults([]);
+      renderCompareResults([]);
     </script>
   </body>
 </html>
-

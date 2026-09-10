@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.model_loader import warmup_model
+from app.model_loader import warmup_all_models
 from app.routers.predict import router as predict_router
 
 
@@ -18,11 +18,11 @@ async def lifespan(_: FastAPI):
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s - %(message)s",
     )
-    warmup_model()
+    warmup_all_models()
     yield
 
 
-app = FastAPI(title="Medical AI DR Screening", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Medical AI DR Screening", version="1.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -36,4 +36,3 @@ _BASE_DIR = Path(__file__).resolve().parent
 app.mount("/static", StaticFiles(directory=str(_BASE_DIR / "static")), name="static")
 
 app.include_router(predict_router)
-
