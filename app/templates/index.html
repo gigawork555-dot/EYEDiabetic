@@ -49,6 +49,10 @@
             <input type="radio" name="predictMode" value="compare" />
             <span>เปรียบเทียบทุกโมเดล</span>
           </label>
+          <label class="mode-option">
+            <input type="radio" name="predictMode" value="evaluate" />
+            <span>ประเมินผลโมเดล (Accuracy/Recall/AUC)</span>
+          </label>
         </div>
 
         <div id="modelSelectWrap" class="model-select-wrap">
@@ -64,6 +68,55 @@
             <a href="/admin">Admin</a>
           </div>
           {% endif %}
+        </div>
+
+        <div id="evalOptionsWrap" class="model-select-wrap hidden">
+          <label class="mode-option" style="margin-bottom:10px;">
+            <input type="checkbox" id="evalCompareAll" />
+            <span>ประเมินทุกโมเดลพร้อมกัน (ไม่เลือก = ใช้โมเดลจาก dropdown ด้านบน)</span>
+          </label>
+
+          <p class="muted" style="margin:0 0 10px;">
+            วางภาพในช่องให้ตรงกับผลจริง ระบบจะใช้ช่องที่วางเป็นคำตอบจริง ไม่ต้องดูชื่อไฟล์
+          </p>
+
+          <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:12px;">
+            <div>
+              <div class="k" style="margin-bottom:6px;">ภาพ DR (เบาหวานขึ้นตาจริง)</div>
+              <div id="dropZoneDr" class="dropzone" tabindex="0" role="button" style="margin-top:0;">
+                <input id="fileInputDr" type="file" accept=".jpg,.jpeg,.png" multiple hidden />
+                <div class="dz-inner">
+                  <div class="dz-icon">⬆</div>
+                  <div class="dz-text">
+                    <div class="dz-title">ลากภาพ DR มาวาง หรือคลิก</div>
+                    <div id="countDr" class="dz-sub">0 ไฟล์</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div class="k" style="margin-bottom:6px;">ภาพ No DR (ปกติจริง)</div>
+              <div id="dropZoneNoDr" class="dropzone" tabindex="0" role="button" style="margin-top:0;">
+                <input id="fileInputNoDr" type="file" accept=".jpg,.jpeg,.png" multiple hidden />
+                <div class="dz-inner">
+                  <div class="dz-icon">⬆</div>
+                  <div class="dz-text">
+                    <div class="dz-title">ลากภาพ No DR มาวาง หรือคลิก</div>
+                    <div id="countNoDr" class="dz-sub">0 ไฟล์</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <details style="margin-top:12px;">
+            <summary class="muted" style="cursor:pointer;">ตัวเลือกเสริม: ใช้ไฟล์ CSV label แทน (ไม่จำเป็น)</summary>
+            <p class="muted" style="margin:8px 0 6px;">
+              ใช้กับภาพที่วางในช่องอัปโหลดด้านล่างเท่านั้น รูปแบบ <span class="mono">filename,label</span>
+              (label = <span class="mono">DR</span>/<span class="mono">No DR</span> หรือ <span class="mono">1</span>/<span class="mono">0</span>)
+            </p>
+            <input id="labelsCsvInput" type="file" accept=".csv" class="select" style="max-width:100%;" />
+          </details>
         </div>
 
         <div id="dropZone" class="dropzone" tabindex="0" role="button" aria-label="Drag and drop images here">
@@ -128,6 +181,12 @@
         <div id="compareResultsWrap" class="hidden">
           <div id="compareResultsBody" class="compare-list"></div>
         </div>
+
+        <!-- Evaluation-mode results (one block per model, with metrics + ROC curve) -->
+        <div id="evalResultsWrap" class="hidden">
+          <div id="evalSummary" class="muted" style="margin-bottom:10px;"></div>
+          <div id="evalResultsBody" class="compare-list"></div>
+        </div>
       </section>
 
       <section class="card disclaimer">
@@ -161,22 +220,53 @@
       const compareResultsWrap = document.getElementById("compareResultsWrap");
       const compareResultsBody = document.getElementById("compareResultsBody");
       const modeRadios = document.querySelectorAll('input[name="predictMode"]');
+      const evalOptionsWrap = document.getElementById("evalOptionsWrap");
+      const evalCompareAll = document.getElementById("evalCompareAll");
+      const dropZoneDr = document.getElementById("dropZoneDr");
+      const dropZoneNoDr = document.getElementById("dropZoneNoDr");
+      const fileInputDr = document.getElementById("fileInputDr");
+      const fileInputNoDr = document.getElementById("fileInputNoDr");
+      const countDr = document.getElementById("countDr");
+      const countNoDr = document.getElementById("countNoDr");
+      const labelsCsvInput = document.getElementById("labelsCsvInput");
+      const evalResultsWrap = document.getElementById("evalResultsWrap");
+      const evalSummary = document.getElementById("evalSummary");
+      const evalResultsBody = document.getElementById("evalResultsBody");
 
       let selectedFiles = [];
+      let filesDr = [];
+      let filesNoDr = [];
       let lastMode = "single";
       let lastSingleResults = [];
       let lastCompareResults = [];
+      let lastEvalResults = null;
 
       function currentMode() {
         for (const r of modeRadios) if (r.checked) return r.value;
         return "single";
       }
 
+      function totalFilesForMode() {
+        if (currentMode() === "evaluate") {
+          return selectedFiles.length + filesDr.length + filesNoDr.length;
+        }
+        return selectedFiles.length;
+      }
+
+      function syncButtons() {
+        const n = totalFilesForMode();
+        analyzeBtn.disabled = n === 0;
+        clearBtn.disabled = n === 0 && filesDr.length === 0 && filesNoDr.length === 0;
+      }
+
       function applyModeUI() {
         const mode = currentMode();
-        modelSelectWrap.classList.toggle("hidden", mode !== "single");
+        modelSelectWrap.classList.toggle("hidden", mode === "compare");
+        evalOptionsWrap.classList.toggle("hidden", mode !== "evaluate");
         singleResultsWrap.classList.toggle("hidden", mode !== "single");
         compareResultsWrap.classList.toggle("hidden", mode !== "compare");
+        evalResultsWrap.classList.toggle("hidden", mode !== "evaluate");
+        syncButtons();
       }
 
       function showError(msg) {
@@ -205,21 +295,27 @@
 
       function setBusy(isBusy) {
         const hasResults = lastSingleResults.length > 0 || lastCompareResults.length > 0;
-        analyzeBtn.disabled = isBusy || selectedFiles.length === 0;
-        clearBtn.disabled = isBusy || selectedFiles.length === 0;
+        analyzeBtn.disabled = isBusy || totalFilesForMode() === 0;
+        clearBtn.disabled = isBusy || totalFilesForMode() === 0;
         csvBtn.disabled = isBusy || !hasResults;
         loading.classList.toggle("hidden", !isBusy);
       }
 
       function updateCountHint() {
-        countHint.textContent = selectedFiles.length === 0
-          ? "ยังไม่มีไฟล์ที่เลือก"
-          : `เลือกแล้ว ${selectedFiles.length} ไฟล์`;
+        const n = totalFilesForMode();
+        countHint.textContent = n === 0 ? "ยังไม่มีไฟล์ที่เลือก" : `เลือกแล้ว ${n} ไฟล์`;
+        countDr.textContent = `${filesDr.length} ไฟล์`;
+        countNoDr.textContent = `${filesNoDr.length} ไฟล์`;
       }
 
       function renderPreviews() {
         previewGrid.innerHTML = "";
-        for (const f of selectedFiles) {
+        const tagged = [
+          ...filesDr.map((f) => ({ f, tag: "DR" })),
+          ...filesNoDr.map((f) => ({ f, tag: "No DR" })),
+          ...selectedFiles.map((f) => ({ f, tag: "" })),
+        ];
+        for (const { f, tag } of tagged) {
           const url = URL.createObjectURL(f);
           const card = document.createElement("div");
           card.className = "thumb";
@@ -227,7 +323,7 @@
             <img alt="" />
             <div class="thumb-meta">
               <div class="thumb-name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</div>
-              <div class="thumb-size muted">${(f.size / 1024).toFixed(1)} KB</div>
+              <div class="thumb-size muted">${(f.size / 1024).toFixed(1)} KB${tag ? " • " + tag : ""}</div>
             </div>
           `;
           const img = card.querySelector("img");
@@ -348,7 +444,74 @@
         }
       }
 
-      // ---------- CSV export (works for both modes) ----------
+      // ---------- Evaluation-mode rendering (Accuracy/Precision/Recall/F1/AUC + ROC) ----------
+      function metricPctOrDash(v) {
+        return (v === null || v === undefined) ? "—" : (Number(v) * 100).toFixed(2) + " %";
+      }
+
+      function renderEvalResults(data) {
+        lastEvalResults = data || null;
+        evalResultsBody.innerHTML = "";
+
+        if (!data || !Array.isArray(data.results) || data.results.length === 0) {
+          evalSummary.textContent = "";
+          evalResultsBody.innerHTML = `<div class="muted">ยังไม่มีผลลัพธ์การประเมิน</div>`;
+          return;
+        }
+
+        const skippedCount = (data.skipped || []).length;
+        const unlabeledCount = (data.unlabeled_files_ignored || []).length;
+        let summaryText = `ประเมินจากภาพที่จับคู่ label ได้ ${data.n_images_used} ภาพ (Threshold = ${data.threshold})`;
+        if (skippedCount > 0) summaryText += ` • ข้าม ${skippedCount} ไฟล์ (ไฟล์เสียหรือหา label ไม่เจอ)`;
+        const dupCount = (data.duplicate_filenames_ignored || []).length;
+        if (dupCount > 0) summaryText += ` • ข้าม ${dupCount} ไฟล์ที่ชื่อซ้ำกัน`;
+        if (unlabeledCount > 0) summaryText += ` • ${unlabeledCount} ไฟล์ไม่มี label เลย`;
+        evalSummary.textContent = summaryText;
+
+        for (const item of data.results) {
+          const block = document.createElement("div");
+          block.className = "compare-file-block";
+
+          if (item.error) {
+            block.innerHTML = `
+              <div class="compare-file-head mono">${escapeHtml(item.model_display_name || item.model)}</div>
+              <div class="errorbox" style="margin:0;">${escapeHtml(item.error)}</div>
+            `;
+            evalResultsBody.appendChild(block);
+            continue;
+          }
+
+          const m = item.metrics || {};
+          const cm = m.confusion_matrix || {};
+          const rocImg = m.roc_curve_png_base64
+            ? `<img src="data:image/png;base64,${m.roc_curve_png_base64}" alt="ROC curve" style="max-width:280px; width:100%; border-radius:12px; border:1px solid var(--border);" />`
+            : `<div class="muted">${escapeHtml(m.auc_note || "ไม่มีกราฟ ROC")}</div>`;
+
+          block.innerHTML = `
+            <div class="compare-file-head mono">${escapeHtml(item.model_display_name || item.model)}</div>
+            <div style="display:flex; gap:18px; flex-wrap:wrap; align-items:flex-start;">
+              <div class="table-wrap" style="flex:1; min-width:280px;">
+                <table class="table">
+                  <tbody>
+                    <tr><td>Accuracy</td><td class="mono">${metricPctOrDash(m.accuracy)}</td></tr>
+                    <tr><td>Precision</td><td class="mono">${metricPctOrDash(m.precision)}</td></tr>
+                    <tr><td>Recall (Sensitivity)</td><td class="mono">${metricPctOrDash(m.recall)}</td></tr>
+                    <tr><td>Specificity</td><td class="mono">${metricPctOrDash(m.specificity)}</td></tr>
+                    <tr><td>F1-Score</td><td class="mono">${metricPctOrDash(m.f1)}</td></tr>
+                    <tr><td>AUC</td><td class="mono">${m.auc === null || m.auc === undefined ? "—" : Number(m.auc).toFixed(4)}</td></tr>
+                    <tr><td>Confusion Matrix</td><td class="mono">TP=${cm.tp ?? "-"} TN=${cm.tn ?? "-"} FP=${cm.fp ?? "-"} FN=${cm.fn ?? "-"}</td></tr>
+                    <tr><td>จำนวนภาพ (DR / No DR)</td><td class="mono">${m.n_positive ?? "-"} / ${m.n_negative ?? "-"}</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div>${rocImg}</div>
+            </div>
+          `;
+          evalResultsBody.appendChild(block);
+        }
+      }
+
+      // ---------- CSV export (works for single/compare modes) ----------
       function toCsv() {
         const header = ["filename", "model", "prediction", "confidence", "prob_no_dr", "prob_dr"];
         const lines = [header.join(",")];
@@ -396,7 +559,7 @@
         URL.revokeObjectURL(url);
       }
 
-      function addFiles(files) {
+      function addFiles(files, bucket = "main") {
         clearError();
         const incoming = Array.from(files || []);
         const valid = [];
@@ -408,16 +571,17 @@
           }
           valid.push(f);
         }
-        selectedFiles = selectedFiles.concat(valid);
+        if (bucket === "dr") filesDr = filesDr.concat(valid);
+        else if (bucket === "nodr") filesNoDr = filesNoDr.concat(valid);
+        else selectedFiles = selectedFiles.concat(valid);
         updateCountHint();
         renderPreviews();
-        analyzeBtn.disabled = selectedFiles.length === 0;
-        clearBtn.disabled = selectedFiles.length === 0;
+        syncButtons();
       }
 
       async function runPredict() {
         clearError();
-        if (selectedFiles.length === 0) {
+        if (totalFilesForMode() === 0) {
           showError("กรุณาเลือกไฟล์ก่อน");
           return;
         }
@@ -429,12 +593,23 @@
         try {
           const fd = new FormData();
           for (const f of selectedFiles) fd.append("files", f, f.name);
+          if (mode === "evaluate") {
+            for (const f of filesDr) fd.append("files_dr", f, f.name);
+            for (const f of filesNoDr) fd.append("files_nodr", f, f.name);
+          }
 
           let endpoint = "/predict";
           if (mode === "single") {
             fd.append("model", modelSelect.value);
-          } else {
+          } else if (mode === "compare") {
             endpoint = "/predict/compare";
+          } else if (mode === "evaluate") {
+            endpoint = "/evaluate";
+            if (labelsCsvInput.files && labelsCsvInput.files[0]) {
+              fd.append("labels_csv", labelsCsvInput.files[0], labelsCsvInput.files[0].name);
+            }
+            fd.append("compare_all", evalCompareAll.checked ? "true" : "false");
+            if (!evalCompareAll.checked) fd.append("model", modelSelect.value);
           }
 
           const res = await fetch(endpoint, { method: "POST", body: fd });
@@ -447,11 +622,15 @@
           if (mode === "single") {
             const results = Array.isArray(data?.results) ? data.results : [data];
             renderSingleResults(results);
-          } else {
+            csvBtn.disabled = false;
+          } else if (mode === "compare") {
             const results = Array.isArray(data?.results) ? data.results : [data];
             renderCompareResults(results);
+            csvBtn.disabled = false;
+          } else if (mode === "evaluate") {
+            renderEvalResults(data);
+            csvBtn.disabled = true; // CSV export เดิมยังไม่รองรับผลลัพธ์ evaluate (metrics คนละรูปแบบ)
           }
-          csvBtn.disabled = false;
         } catch (e) {
           showError("เชื่อมต่อเซิร์ฟเวอร์ไม่สำเร็จ");
         } finally {
@@ -461,14 +640,21 @@
 
       function clearAll() {
         selectedFiles = [];
+        filesDr = [];
+        filesNoDr = [];
         lastSingleResults = [];
         lastCompareResults = [];
+        lastEvalResults = null;
+        fileInputDr.value = "";
+        fileInputNoDr.value = "";
+        labelsCsvInput.value = "";
+        evalCompareAll.checked = false;
         previewGrid.innerHTML = "";
+        renderEvalResults(null);
         updateCountHint();
         renderSingleResults([]);
         renderCompareResults([]);
-        analyzeBtn.disabled = true;
-        clearBtn.disabled = true;
+        syncButtons();
         csvBtn.disabled = true;
         fileInput.value = "";
         clearError();
@@ -491,6 +677,23 @@
         addFiles(e.dataTransfer.files);
       });
 
+      function wireDropZone(zone, input, bucket) {
+        zone.addEventListener("click", () => input.click());
+        zone.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" || e.key === " ") input.click();
+        });
+        input.addEventListener("change", (e) => { addFiles(e.target.files, bucket); input.value = ""; });
+        zone.addEventListener("dragover", (e) => { e.preventDefault(); zone.classList.add("dragover"); });
+        zone.addEventListener("dragleave", () => zone.classList.remove("dragover"));
+        zone.addEventListener("drop", (e) => {
+          e.preventDefault();
+          zone.classList.remove("dragover");
+          addFiles(e.dataTransfer.files, bucket);
+        });
+      }
+      wireDropZone(dropZoneDr, fileInputDr, "dr");
+      wireDropZone(dropZoneNoDr, fileInputNoDr, "nodr");
+
       analyzeBtn.addEventListener("click", runPredict);
       clearBtn.addEventListener("click", clearAll);
       csvBtn.addEventListener("click", downloadCsv);
@@ -500,6 +703,7 @@
       updateCountHint();
       renderSingleResults([]);
       renderCompareResults([]);
+      renderEvalResults(null);
     </script>
   </body>
 </html>

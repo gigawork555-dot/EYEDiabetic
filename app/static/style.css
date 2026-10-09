@@ -152,8 +152,21 @@ body {
   color: var(--text);
   font-weight: 700;
   max-width: 320px;
+  color-scheme: dark; /* ให้เบราว์เซอร์วาด dropdown/scrollbar เป็นธีมมืด */
 }
 .select:focus { outline: none; border-color: rgba(94, 234, 212, 0.65); }
+/* รายการใน dropdown: ต้องกำหนดพื้นทึบเอง เพราะ option ใช้พื้นโปร่งใสของ .select ไม่ได้
+   (ไม่งั้นได้พื้นขาวของระบบ + ตัวอักษรขาว = มองไม่เห็น) */
+.select option {
+  background-color: #141a2e;
+  color: #ffffff;
+  font-weight: 600;
+}
+.select option:checked,
+.select option:hover {
+  background-color: #2a3358;
+  color: #5eead4;
+}
 
 .dropzone {
   margin-top: 14px;

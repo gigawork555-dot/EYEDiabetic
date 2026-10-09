@@ -16,23 +16,7 @@ model here — no per-model preprocessing branching needed in Python.
 
 MODEL_REGISTRY = {
     "efficientnetb0": {
-        "display_name": "EfficientNetB0",
-        "file": "EfficientNetB0_model.keras",
-    },
-    "mobilenetv2": {
-        "display_name": "MobileNetV2",
-        "file": "MobileNetV2_model.keras",
-    },
-    "resnet50v2": {
-        "display_name": "ResNet50V2",
-        "file": "ResNet50V2_model.keras",
-    },
-    "xception": {
-        "display_name": "Xception",
-        "file": "Xception_model.keras",
-    },
-    "basiccnn": {
-        "display_name": "Basic CNN",
-        "file": "BasicCNN_model.keras",
+            "display_name": "EfficientNetB0_A_ft.keras",
+            "file": "EffB0_A_ft.keras",
     },
 }
